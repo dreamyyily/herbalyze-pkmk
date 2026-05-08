@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
 import MainLayout from "../../layouts/MainLayout";
-import { getSignerContract, getSigner } from "../../utils/web3"; 
 import { sortByDate } from "../../utils/sort";
 import { formatTanggal } from "../../utils/formatTanggal";
 import { AlertTriangle, ChevronUp, ChevronDown, FileText } from "lucide-react";
@@ -47,59 +46,25 @@ export default function AdminDashboard() {
 
   const sortedDoctors = sortByDate(pendingDoctors, "created_at", sortOrder);
 
-  // --- LOGIKA APPROVE (Blockchain + Database) ---
   const executeApprove = async () => {
     if (!selectedDoctor) return;
-    const walletAddress = selectedDoctor.wallet_address;
-    const nama = selectedDoctor.name;
-
     setIsModalOpen(false);
-
     try {
-      const signer = await getSigner();
-      const signerAddress = await signer.getAddress();
-      const contract = await getSignerContract();
-      const isAdminOnChain = await contract.isAdmin(signerAddress);
-
-      if (!isAdminOnChain) {
-        throw new Error("MetaMask Anda bukan Admin di Smart Contract!");
-      }
-
-      const tx = await contract.approveUser(walletAddress);
-      await tx.wait(); 
-
-      const response = await fetch("http://localhost:8000/api/admin/approve_doctor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_address: walletAddress }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Gagal update database");
-
-      const isGantiInstansi = selectedDoctor.instansi_lama && selectedDoctor.instansi_baru;
-
-      if (isGantiInstansi) {
-        showToast(
-          'success',
-          'Berhasil',
-          `Perubahan instansi ${nama} telah berhasil disetujui.`
-        );
-      } else {
-        showToast(
-          'success',
-          'Berhasil',
-          `${nama} telah resmi disahkan sebagai dokter terverifikasi.`
-        );
-      }
-      fetchPendingDoctors();
+        const response = await fetch("http://localhost:8000/api/admin/approve_doctor", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: selectedDoctor.id }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Gagal approve");
+        showToast('success', 'Berhasil', `${selectedDoctor.name} berhasil diverifikasi.`);
+        fetchPendingDoctors();
     } catch (error) {
-      const msg = error?.data?.message || error?.reason || error.message;
-      showToast('danger', 'Gagal Approve', msg);
+        showToast('danger', 'Gagal', error.message);
     } finally {
-      setSelectedDoctor(null);
+        setSelectedDoctor(null);
     }
-  };
+};
 
   // --- LOGIKA REJECT ---
   const executeReject = async () => {
@@ -108,7 +73,7 @@ export default function AdminDashboard() {
       const response = await fetch("http://localhost:8000/api/admin/reject_doctor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_address: selectedDoctor.wallet_address }),
+        body: JSON.stringify({ user_id: selectedDoctor.id }),
       });
 
       if (!response.ok) throw new Error("Gagal menolak pengajuan");
@@ -338,42 +303,5 @@ export default function AdminDashboard() {
         
       </div>
     </MainLayout>
-  );
-}
-
-// Komponen Form Manual (Diperbaiki komunikasinya dengan UI Utama)
-function ApprovePatientForm({ getSigner, getSignerContract, showToast }) {
-  const [walletInput, setWalletInput] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  const handleApprovePatient = async () => {
-    const wallet = walletInput.trim();
-    if (!wallet || wallet.length !== 42) return showToast('danger', 'Error', 'Alamat wallet tidak valid!');
-
-    setIsProcessing(true);
-    try {
-      const signer = await getSigner();
-      const signerAddress = await signer.getAddress();
-      const contract = await getSignerContract();
-
-      const isAdminCheck = await contract.isAdmin(signerAddress);
-      if (!isAdminCheck) throw new Error("MetaMask bukan Admin!");
-
-      const tx = await contract.approveUser(wallet);
-      await tx.wait();
-      showToast('success', 'Berhasil', 'Wallet pasien berhasil disahkan.');
-      setWalletInput("");
-    } catch (error) {
-      showToast('danger', 'Gagal', error.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  return (
-    <div className="flex gap-3">
-      <input type="text" value={walletInput} onChange={(e) => setWalletInput(e.target.value)} placeholder="0x... (wallet address)" className="flex-1 px-4 py-2 border rounded-xl text-sm font-mono" />
-      <button onClick={handleApprovePatient} disabled={isProcessing} className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-bold disabled:opacity-50">🔐 {isProcessing ? "Proses..." : "Approve"}</button>
-    </div>
   );
 }

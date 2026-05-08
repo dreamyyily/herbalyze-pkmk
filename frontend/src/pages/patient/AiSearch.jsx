@@ -65,12 +65,11 @@ export default function AiSearch() {
       return;
     }
 
-    const userWallet = localStorage.getItem('user_wallet') || "guest_user";
+    const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
     
-    // Payload khusus untuk endpoint SBERT di Backend
     const payload = {
-      wallet_address: userWallet,
-      query_text: promptText, // Teks bebas untuk SBERT
+      user_id: profile?.id || 0,
+      query_text: promptText, 
       kondisi: selectedCondition,
       obat_kimia: selectedDrug
     };
@@ -79,7 +78,6 @@ export default function AiSearch() {
     setRecommendations(null);
 
     try {
-      // PERHATIKAN: Kita arahkan ke endpoint yang berbeda khusus untuk SBERT (misal: /api/recommend_sbert)
         const res = await fetch("http://localhost:8000/api/recommend_hybrid", {        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)

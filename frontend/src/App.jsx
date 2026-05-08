@@ -10,24 +10,11 @@ import Register from "./pages/Register.jsx";
 import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
 import Riwayat from "./pages/patient/Riwayat.jsx";
 import AiSearch from "./pages/patient/AiSearch.jsx";
-import { checkWalletConnection, listenToAccountChanges } from "./utils/web3Helpers";
 
 const ProtectedRoute = ({ children }) => {
-    const [isAuthenticated, setIsAuthenticated] = useState(null);
     const location = useLocation();
-
-    useEffect(() => {
-        const checkAuth = async () => {
-            const address = await checkWalletConnection();
-            setIsAuthenticated(!!address);
-        };
-        checkAuth();
-    }, []);
-
-    if (isAuthenticated === null) {
-        return <div className="flex h-screen items-center justify-center">Loading...</div>;
-    }
-    if (!isAuthenticated) {
+    const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
+    if (!profile || !profile.id) {
         return <Navigate to="/" state={{ from: location }} replace />;
     }
     return children;
@@ -72,29 +59,12 @@ const PatientDoctorRouteWithAuth = ({ children }) => {
     const [roleStatus, setRoleStatus] = useState(null); // null=loading, true=ok, false=rejected
 
     useEffect(() => {
-        const wallet = localStorage.getItem('user_wallet');
-        if (!wallet) {
-            setRoleStatus(false);
-            return;
-        }
-        // Cek dari localStorage dulu (cepat)
-        const cached = JSON.parse(localStorage.getItem('user_profile') || '{}');
+        const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
+        if (!profile?.id) { setRoleStatus(false); return; }
         const validRoles = ['Patient', 'Doctor', 'Pending_Doctor', 'Rejected_Doctor'];
-        if (cached.role && validRoles.includes(cached.role)) {
-            setRoleStatus(true);
-            return;
-        }
-        // Jika belum ada di cache, fetch dari API
-        fetch(`http://localhost:8000/api/profile/${wallet}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.role) {
-                    localStorage.setItem('user_profile', JSON.stringify({ ...cached, role: data.role, name: data.name, foto_profil: data.foto_profil || null }));
-                }
-                const ok = validRoles.includes(data.role);
-                setRoleStatus(ok);
-            })
-            .catch(() => setRoleStatus(false));
+        if (validRoles.includes(profile.role)) { setRoleStatus(true); return; }
+        
+        setRoleStatus(false);
     }, []);
 
     if (roleStatus === null) {
@@ -122,8 +92,6 @@ const PatientDoctorRoute = ({ children }) => {
     return children;
 };
 
-// Tambahkan komponen ini di App.jsx, setelah PatientDoctorRoute
-
 const ProfileCompleteRoute = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -131,30 +99,23 @@ const ProfileCompleteRoute = ({ children }) => {
 
     useEffect(() => {
         const checkProfile = async () => {
-            const wallet = localStorage.getItem('user_wallet');
-            if (!wallet) { setStatus(false); return; }
+            const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
+            if (!profile?.id) { setStatus(false); return; }
 
             const cached = JSON.parse(localStorage.getItem('user_profile_complete') || 'null');
             if (cached === true) { setStatus(true); return; }
 
             try {
-                const res = await fetch(`http://localhost:8000/api/profile/${wallet}`);
+                const res = await fetch(`http://localhost:8000/api/profile/${profile.id}`);
                 if (!res.ok) { setStatus(false); return; }
-                const profile = await res.json();
-
+                const data = await res.json();
                 const isComplete = !!(
-                    profile.nik &&
-                    profile.name &&
-                    profile.tanggal_lahir &&
-                    profile.alergi_herbal &&
-                    profile.alergi_herbal.length > 0
+                    data.nik && data.name && data.tanggal_lahir &&
+                    data.alergi_herbal && data.alergi_herbal.length > 0
                 );
-
                 localStorage.setItem('user_profile_complete', JSON.stringify(isComplete));
                 setStatus(isComplete);
-            } catch {
-                setStatus(false);
-            }
+            } catch { setStatus(false); }
         };
         checkProfile();
     }, [location.pathname]);
@@ -205,42 +166,14 @@ const AppContent = () => {
     const location = useLocation();
 
     useEffect(() => {
-        const checkAutoLogin = async () => {
-            if (location.pathname === '/') {
-                const address = await checkWalletConnection();
-                const storedWallet = localStorage.getItem('user_wallet');
-                if (address && storedWallet && address.toLowerCase() === storedWallet.toLowerCase()) {
-                    const profile = JSON.parse(localStorage.getItem('user_profile') || '{}');
-                    const adminVerified = localStorage.getItem('admin_metamask_verified') === 'true';
-                    if (profile.role === 'Admin' && adminVerified) {
-                        navigate('/admin');
-                    } else if (profile.role !== 'Admin') {
-                        navigate('/home');
-                    }
-                    // Jika Admin tapi belum verify MetaMask → tetap di halaman login
-                }
-            }
-        };
-        checkAutoLogin();
+        if (location.pathname === '/') {
+        const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
+        if (profile?.id) {
+            if (profile.role === 'Admin') navigate('/admin');
+            else navigate('/home');
+        }
+        }
     }, [location.pathname, navigate]);
-
-    useEffect(() => {
-        listenToAccountChanges((newAccount) => {
-            if (!newAccount) {
-                localStorage.removeItem('user_wallet');
-                localStorage.removeItem('user_profile');
-                localStorage.removeItem('admin_metamask_verified');
-                localStorage.removeItem('user_profile_complete');
-                if (location.pathname !== '/') navigate('/');
-            } else {
-                localStorage.removeItem('user_wallet');
-                localStorage.removeItem('user_profile');
-                localStorage.removeItem('admin_metamask_verified');
-                localStorage.removeItem('user_profile_complete');
-                navigate('/');
-            }
-        });
-    }, [navigate, location.pathname]);
 
     return (
         <Routes>

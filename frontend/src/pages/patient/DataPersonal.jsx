@@ -80,15 +80,10 @@ export default function DataPersonal() {
   };
   const [herbsOptions, setHerbsOptions] = useState([]);
 
-  // --- MENGATASI KONFLIK DI USE EFFECT ---
   useEffect(() => {
-    const wallet = localStorage.getItem("user_wallet");
-    if (!wallet) {
-      console.error("Wallet tidak ditemukan");
-      return;
-    }
-
-    fetch(`http://127.0.0.1:8000/api/profile/${wallet}`)
+    const profile = JSON.parse(localStorage.getItem("user_profile") || 'null');
+    if (!profile?.id) { console.error("User tidak ditemukan"); return; }
+    fetch(`http://127.0.0.1:8000/api/profile/${profile.id}`)
       .then((res) => res.json())
       .then((data) => {
         setFormData({
@@ -122,10 +117,11 @@ export default function DataPersonal() {
           nomor_str: data.nomor_str || "",
         });
         if (data.foto_profil) setPhotoPreview(data.foto_profil);
-        // role n name to storage
+
         localStorage.setItem(
           "user_profile",
           JSON.stringify({
+            id: profile.id, 
             name: data.name,
             role: data.role,
           }),
@@ -213,14 +209,13 @@ const handleDoctorFileSIP = (e) => {
   if (file) setDoctorRequest((prev) => ({ ...prev, dokumenSIP: file }));
 };
 
-  // --- FUNGSI REQUEST DOKTER ---
   const handleSubmitDoctorRequest = async () => {
     if (!doctorRequest.nomorSTR || !doctorRequest.institusi || !doctorRequest.dokumenSTR || !doctorRequest.dokumenSIP) {
     showToast("danger", "Data Belum Lengkap", "Harap lengkapi nomor STR, institusi, dokumen STR, dan dokumen SIP.");
     return;
-  }
-    const walletAddress = localStorage.getItem("user_wallet");
-    if (!walletAddress) {
+    }
+    const profile = JSON.parse(localStorage.getItem("user_profile") || 'null');
+    if (!profile?.id) {
       showToast(
         "danger",
         "Sesi Tidak Valid",
@@ -230,11 +225,11 @@ const handleDoctorFileSIP = (e) => {
     }
 
     const formPayload = new FormData();
-    formPayload.append("wallet_address", walletAddress);
+    formPayload.append("user_id", profile.id);
     formPayload.append("nomor_str", doctorRequest.nomorSTR);
     formPayload.append("nama_instansi", doctorRequest.institusi);
-    formPayload.append("file_str", doctorRequest.dokumenSTR);   
-    formPayload.append("file_sip", doctorRequest.dokumenSIP); 
+    formPayload.append("file_str", doctorRequest.dokumenSTR);
+    formPayload.append("file_sip", doctorRequest.dokumenSIP);
 
     try {
       const response = await fetch("http://localhost:8000/api/request_doctor", {
@@ -264,8 +259,8 @@ const handleDoctorFileSIP = (e) => {
   };
 
   const handleCancelInstansiRequest = async () => {
-    const walletAddress = localStorage.getItem("user_wallet");
-    if (!walletAddress) return;
+    const profile = JSON.parse(localStorage.getItem("user_profile") || 'null');
+    if (!profile?.id) return;
 
     try {
       const response = await fetch(
@@ -273,7 +268,7 @@ const handleDoctorFileSIP = (e) => {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ wallet_address: walletAddress }),
+          body: JSON.stringify({ user_id: profile.id })
         },
       );
 
@@ -293,7 +288,7 @@ const handleDoctorFileSIP = (e) => {
       setDokumenSIP(null);
       localStorage.setItem(
         "user_profile",
-        JSON.stringify({ name: data.user.name, role: data.user.role }),
+        JSON.stringify({ id: profile.id,name: data.user.name, role: data.user.role }),
       );
       showToast(
         "success",
@@ -307,20 +302,21 @@ const handleDoctorFileSIP = (e) => {
   };
 
   const handleDismissRejection = async () => {
-    const walletAddress = localStorage.getItem("user_wallet");
-    if (!walletAddress) return;
+    const profile = JSON.parse(localStorage.getItem("user_profile") || 'null');
+    if (!profile?.id) return;
+    const userId = profile.id; 
 
     try {
       const response = await fetch("http://localhost:8000/api/reset_role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_address: walletAddress }),
+        body: JSON.stringify({ user_id: userId }),
       });
 
       if (!response.ok) throw new Error("Gagal mereset status");
 
       const profileRes = await fetch(
-        `http://127.0.0.1:8000/api/profile/${walletAddress}`,
+        `http://127.0.0.1:8000/api/profile/${userId}`,
       );
       if (profileRes.ok) {
         const data = await profileRes.json();
@@ -344,6 +340,7 @@ const handleDoctorFileSIP = (e) => {
         localStorage.setItem(
           "user_profile",
           JSON.stringify({
+            id: userId,
             name: data.name,
             role: data.role,
           }),
@@ -374,13 +371,13 @@ const handleDoctorFileSIP = (e) => {
       );
       return;
     }
-    const walletAddress = localStorage.getItem("user_wallet");
-    if (!walletAddress) return;
+    const profile = JSON.parse(localStorage.getItem("user_profile") || 'null');
+    if (!profile?.id) return;
 
     setIsSubmittingInstansi(true);
     try {
       const formPayload = new FormData();
-      formPayload.append("wallet_address", walletAddress);
+      formPayload.append("user_id", profile.id);
       formPayload.append("nama_instansi", newInstansi.trim());
       formPayload.append("file_sip", dokumenSIP);
 
@@ -476,15 +473,15 @@ const handleDoctorFileSIP = (e) => {
   const handleSimpan = async () => {
     if (!isPersonalDataComplete(true)) return;
 
-    const walletAddress = localStorage.getItem("user_wallet");
-    if (!walletAddress) {
+    const profile = JSON.parse(localStorage.getItem("user_profile") || 'null');
+    if (!profile?.id) {
       showToast("danger", "Sesi Tidak Valid", "Silakan login ulang.");
       return;
     }
 
     try {
       const payload = {
-        wallet_address: walletAddress,
+        user_id: profile.id,
         nik: formData.nik,
         nama: formData.nama,
         tempat_lahir: formData.tempatLahir,
@@ -520,6 +517,7 @@ const handleDoctorFileSIP = (e) => {
       localStorage.setItem(
         "user_profile",
         JSON.stringify({
+          id: profile.id,  
           name: formData.nama,
           role: formData.role,
           foto_profil: formData.photo || null,

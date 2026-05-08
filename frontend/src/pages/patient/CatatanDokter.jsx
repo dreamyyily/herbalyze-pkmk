@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "../../layouts/MainLayout";
-import CryptoJS from "crypto-js";
-import { ethers } from "ethers";
-import { getReadOnlyContract, getSignerContract } from "../../utils/web3";
 import Avatar from "../../components/Avatar";
 import {
   Clock,
@@ -32,38 +29,13 @@ function Toast({ toasts, removeToast }) {
           key={t.id}
           className={`pointer-events-auto flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-sm max-w-sm w-full
             transform transition-all duration-500 animate-slide-in
-            ${
-              t.type === "success" ? (
-                <CheckCircle
-                  size={20}
-                  className="text-green-500 flex-shrink-0 mt-0.5"
-                />
-              ) : t.type === "error" ? (
-                <XCircle
-                  size={20}
-                  className="text-red-500 flex-shrink-0 mt-0.5"
-                />
-              ) : t.type === "warning" ? (
-                <AlertTriangle
-                  size={20}
-                  className="text-orange-400 flex-shrink-0 mt-0.5"
-                />
-              ) : (
-                <ShieldCheck
-                  size={20}
-                  className="text-blue-400 flex-shrink-0 mt-0.5"
-                />
-              )
-            }`}
+            ${t.type === "success" ? "bg-white/90 border-green-200 text-green-800" :
+              t.type === "error"   ? "bg-white/90 border-red-200 text-red-800" :
+              t.type === "warning" ? "bg-white/90 border-orange-200 text-orange-800" :
+                                     "bg-white/90 border-blue-200 text-blue-800"}`}
         >
           <span className="text-2xl mt-0.5 flex-shrink-0">
-            {t.type === "success"
-              ? "✅"
-              : t.type === "error"
-                ? "❌"
-                : t.type === "warning"
-                  ? "⚠️"
-                  : "ℹ️"}
+            {t.type === "success" ? "✅" : t.type === "error" ? "❌" : t.type === "warning" ? "⚠️" : "ℹ️"}
           </span>
           <div className="flex-1">
             {t.title && <p className="font-bold text-sm mb-0.5">{t.title}</p>}
@@ -161,7 +133,8 @@ function LoadingOverlay({ show, message }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function CatatanDokter() {
-  const userWallet = (localStorage.getItem("user_wallet") || "").toLowerCase();
+  const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
+  const userId = profile?.id;
   const navigate = useNavigate();
 
   // ── State: rekam medis dari blockchain ──
@@ -218,11 +191,11 @@ export default function CatatanDokter() {
 
   // ── Polling draft pending ──
   const fetchPendingDrafts = useCallback(async () => {
-    if (!userWallet) return;
+    if (!userId) return;
     setIsFetchingDrafts(true);
     try {
       const res = await fetch(
-        `${API}/api/medical-record/draft/pending/${userWallet}`,
+        `${API}/api/medical-record/draft/pending/${userId}`,
       );
       if (!res.ok) return;
       const data = await res.json();
@@ -232,69 +205,31 @@ export default function CatatanDokter() {
     } finally {
       setIsFetchingDrafts(false);
     }
-  }, [userWallet]);
+  }, [userId]);
 
   useEffect(() => {
-    if (userWallet) {
+    if (userId) {
       fetchPendingDrafts();
-      fetchRecordsFromBlockchain();
+      fetchRecordsFromDB();
     }
     const interval = setInterval(fetchPendingDrafts, 30000);
     return () => clearInterval(interval);
-  }, [userWallet]);
+  }, [userId]);
 
-  // ── Fetch rekam medis dari blockchain ──
-  const fetchRecordsFromBlockchain = async () => {
-    if (!userWallet) return;
+  const fetchRecordsFromDB = async () => {
+    if (!userId) return;
     setIsFetching(true);
     try {
-      const contract = getReadOnlyContract();
-      const totalCount = await contract.recordCount();
-      const total = totalCount.toNumber();
-      if (total === 0) {
-        setRecords([]);
-        return;
-      }
-
-      const myRecords = [];
-      for (let i = 1; i <= total; i++) {
-        try {
-          const [encryptedData, patientAddress, uploader, timestamp] =
-            await contract.getMedicalRecord(i);
-          if (patientAddress.toLowerCase() !== userWallet) continue;
-          try {
-            const bytes = CryptoJS.AES.decrypt(encryptedData, userWallet);
-            const plain = bytes.toString(CryptoJS.enc.Utf8);
-            if (!plain) continue;
-            const parsed = JSON.parse(plain);
-            myRecords.push({
-              id: i,
-              patientAddress,
-              uploader,
-              timestamp: new Date(timestamp.toNumber() * 1000),
-              ...parsed,
-            });
-          } catch {
-            continue;
-          }
-        } catch (recordErr) {
-          console.warn(`Gagal membaca record #${i}:`, recordErr);
-        }
-      }
-
-      myRecords.sort((a, b) => b.timestamp - a.timestamp);
-      setRecords(myRecords);
+        const res = await fetch(`http://localhost:8000/api/medical-record/patient/${userId}`);
+        const data = await res.json();
+        setRecords(data.records || []);
     } catch (err) {
-      console.error("Gagal mengambil data dari blockchain:", err);
-      addToast(
-        "error",
-        "Gagal Memuat",
-        "Gagal memuat riwayat catatan medis. Coba refresh halaman.",
-      );
+        console.error("Gagal mengambil rekam medis:", err);
+        addToast("error", "Gagal Memuat", "Gagal memuat riwayat catatan medis.");
     } finally {
-      setIsFetching(false);
+        setIsFetching(false);
     }
-  };
+};
 
   // ── Navigasi ke AI search dengan data rekam medis ──
   const handleCariRekomendasiAI = (record) => {
@@ -308,7 +243,7 @@ export default function CatatanDokter() {
       state: {
         useSbertMode: true,
         sbertQuery: combinedTextForSbert,
-        kondisiKhusus: record.kondisiKhusus,
+        kondisi_khusus: record.kondisi_khusus,
       },
     });
   };
@@ -316,126 +251,31 @@ export default function CatatanDokter() {
   // ── Pasien ACC draft ──
   const handleApproveDraft = async (draft) => {
     const confirmed = await showModal({
-      type: "confirm",
-      icon: "🔐",
-      title: "Setujui Rekam Medis?",
-      message: `Data dari Dr. ${draft.doctor_name || "Dokter"} akan disimpan secara permanen dan tidak dapat diubah.`,
-      sub: "Dompet digital Anda akan terbuka untuk konfirmasi. Pastikan Anda sudah memeriksa data dengan teliti.",
-      confirmText: "Ya, Saya Setuju",
-      cancelText: "Batal",
+        type: "confirm", icon: "✅",
+        title: "Setujui Rekam Medis?",
+        message: `Data dari Dr. ${draft.doctor_name || "Dokter"} akan disimpan permanen.`,
+        confirmText: "Ya, Saya Setuju", cancelText: "Batal",
     });
     if (!confirmed) return;
 
     try {
-      setIsProcessingDraft(true);
-      if (!window.ethereum) {
-        addToast(
-          "error",
-          "Dompet Digital Tidak Ditemukan",
-          "Silakan install ekstensi MetaMask di browser Anda.",
-        );
-        return;
-      }
-
-      setLoadingMsg("Menghubungkan dompet digital...");
-      const provider = new ethers.providers.Web3Provider(
-        window.ethereum,
-        "any",
-      );
-      await provider.send("eth_requestAccounts", []);
-
-      setLoadingMsg("Memverifikasi akses akun...");
-      const readContract = getReadOnlyContract();
-      const checksumWallet = ethers.utils.getAddress(userWallet);
-      const isApproved = await readContract.isApprovedUser(checksumWallet);
-
-      if (!isApproved) {
-        setLoadingMsg("Mendaftarkan akun Anda...");
-        const approveRes = await fetch(`${API}/api/connect-wallet`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: JSON.parse(localStorage.getItem("user_profile") || "{}")
-              .id,
-            wallet_address: userWallet,
-          }),
-        });
-        if (!approveRes.ok) {
-          addToast(
-            "error",
-            "Akun Belum Terdaftar",
-            "Hubungi admin untuk mendaftarkan akun Anda terlebih dahulu.",
-          );
-          return;
+        setIsProcessingDraft(true);
+        setLoadingMsg("Menyimpan rekam medis...");
+        const res = await fetch(`${API}/api/medical-record/draft/${draft.id}/approve`, { method: "POST" });
+        if (!res.ok) {
+            const data = await res.json();
+            addToast("error", "Gagal Menyimpan", data.detail || "Terjadi kesalahan.");
+            return;
         }
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-
-      setLoadingMsg("Mengamankan data rekam medis...");
-      const medicalDataObj = {
-        diagnosis: draft.record_data.diagnosis || "",
-        gejala: draft.record_data.gejala || "",
-        obat: draft.record_data.obat || "",
-        kondisiKhusus: draft.record_data.kondisiKhusus || "",
-        catatanTambahan: draft.record_data.catatanTambahan || "",
-        dokterName: draft.doctor_name || "Dokter",
-        instansi: draft.doctor_instansi || "-",
-        doctor_wallet: draft.doctor_wallet || "",
-      };
-      const cipherText = CryptoJS.AES.encrypt(
-        JSON.stringify(medicalDataObj),
-        userWallet,
-      ).toString();
-
-      setLoadingMsg("Menunggu konfirmasi dari dompet digital Anda...");
-      const signerContract = await getSignerContract();
-      const tx = await signerContract.addMedicalRecord(
-        checksumWallet,
-        cipherText,
-      );
-
-      setLoadingMsg("Menyimpan data secara permanen...");
-      const receipt = await tx.wait();
-      const txHash = receipt.transactionHash || receipt.hash;
-
-      await fetch(
-        `${API}/api/medical-record/draft/${draft.id}/approve?tx_hash=${encodeURIComponent(txHash)}`,
-        { method: "POST" },
-      );
-
-      setSelectedDraft(null);
-      fetchPendingDrafts();
-      fetchRecordsFromBlockchain();
-      addToast(
-        "success",
-        "Rekam Medis Tersimpan!",
-        "Data rekam medis Anda telah disimpan secara aman dan permanen.",
-        "",
-        8000,
-      );
+        setSelectedDraft(null);
+        fetchPendingDrafts();
+        fetchRecordsFromDB();
+        addToast("success", "Rekam Medis Tersimpan!", "Data rekam medis telah disimpan.");
     } catch (error) {
-      const msg = error?.message || error?.reason || String(error);
-      if (
-        error.code === 4001 ||
-        msg.includes("user rejected") ||
-        msg.includes("denied")
-      ) {
-        addToast(
-          "warning",
-          "Dibatalkan",
-          "Penyimpanan dibatalkan. Data belum tersimpan.",
-        );
-      } else {
-        addToast(
-          "error",
-          "Gagal Menyimpan",
-          "Terjadi kesalahan. Silakan coba lagi.",
-          msg,
-        );
-      }
+        addToast("error", "Gagal Menyimpan", "Terjadi kesalahan. Silakan coba lagi.");
     } finally {
-      setIsProcessingDraft(false);
-      setLoadingMsg("");
+        setIsProcessingDraft(false);
+        setLoadingMsg("");
     }
   };
 
@@ -480,7 +320,7 @@ export default function CatatanDokter() {
   const filteredRecords = records.filter(
     (r) =>
       (r.diagnosis || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (r.dokterName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.doctor_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (r.obat || "").toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
@@ -572,7 +412,7 @@ export default function CatatanDokter() {
                   </h2>
                   <p className="text-sm text-gray-500 mt-1">
                     ID: #{selectedRecord.id} • Diterbitkan pada{" "}
-                    {formatTanggal(selectedRecord.timestamp)}
+                    {formatTanggal(selectedRecord.created_at)}
                   </p>
                 </div>
                 <button
@@ -587,7 +427,7 @@ export default function CatatanDokter() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-dashed border-gray-200 mb-8">
                   <div className="flex items-center gap-4">
                     <Avatar
-                      name={selectedRecord.dokterName}
+                      name={selectedRecord.doctor_name}
                       fotoProfil={null}
                       size="lg"
                     />
@@ -596,7 +436,7 @@ export default function CatatanDokter() {
                         Pemeriksa
                       </p>
                       <p className="text-xl font-bold text-gray-800">
-                        {selectedRecord.dokterName || "Dokter Anonim"}
+                        {selectedRecord.doctor_name || "Dokter Anonim"}
                       </p>
                     </div>
                   </div>
@@ -639,18 +479,18 @@ export default function CatatanDokter() {
                         Kondisi Khusus
                       </p>
                       <p className="text-gray-700 bg-gray-50 p-4 rounded-xl border border-gray-100 font-semibold">
-                        {selectedRecord.kondisiKhusus || "-"}
+                        {selectedRecord.kondisi_khusus || "-"}
                       </p>
                     </div>
                   </div>
-                  {selectedRecord.catatanTambahan && (
+                  {selectedRecord.catatan_tambahan && (
                     <div className="col-span-full">
                       <p className="text-sm font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-gray-400"></span>{" "}
                         Catatan Tambahan
                       </p>
                       <p className="text-gray-600 bg-gray-50/50 p-4 rounded-xl border border-gray-100 italic">
-                        "{selectedRecord.catatanTambahan}"
+                        "{selectedRecord.catatan_tambahan}"
                       </p>
                     </div>
                   )}
@@ -764,16 +604,16 @@ export default function CatatanDokter() {
                     Kondisi Khusus
                   </p>
                   <p className="font-semibold text-gray-800">
-                    {selectedDraft.record_data?.kondisiKhusus || "-"}
+                    {selectedDraft.record_data?.kondisi_khusus || "-"}
                   </p>
                 </div>
-                {selectedDraft.record_data?.catatanTambahan && (
+                {selectedDraft.record_data?.catatan_tambahan && (
                   <div className="bg-yellow-50 rounded-xl p-5 border border-yellow-100 col-span-full">
                     <p className="text-xs text-yellow-600 mb-1 uppercase tracking-wide">
                       Catatan Tambahan
                     </p>
                     <p className="text-gray-800">
-                      {selectedDraft.record_data.catatanTambahan}
+                      {selectedDraft.record_data.catatan_tambahan}
                     </p>
                   </div>
                 )}
@@ -1046,7 +886,7 @@ export default function CatatanDokter() {
                         />
                       </div>
                       <button
-                        onClick={fetchRecordsFromBlockchain}
+                        onClick={fetchRecordsFromDB}
                         disabled={isFetching}
                         className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 p-3 rounded-xl transition shadow-sm"
                         title="Refresh Data"
@@ -1106,7 +946,7 @@ export default function CatatanDokter() {
                               className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors group"
                             >
                               <td className="py-4 px-6 text-gray-600 font-medium whitespace-nowrap">
-                                {new Date(record.timestamp).toLocaleDateString(
+                                {new Date(record.created_at).toLocaleDateString(
                                   "id-ID",
                                   {
                                     day: "2-digit",
@@ -1118,12 +958,12 @@ export default function CatatanDokter() {
                               <td className="py-4 px-6 whitespace-nowrap">
                                 <div className="flex items-center gap-2">
                                   <Avatar
-                                    name={record.dokterName}
+                                    name={record.doctor_name}
                                     fotoProfil={null}
                                     size="sm"
                                   />
                                   <span className="font-semibold text-gray-800">
-                                    {record.dokterName || "-"}
+                                    {record.doctor_name || "-"}
                                   </span>
                                 </div>
                               </td>

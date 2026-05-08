@@ -90,9 +90,9 @@ export default function Home() {
       return;
     }
 
-    const userWallet = localStorage.getItem('user_wallet') || "guest_user"; 
+    const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
     const payload = { 
-      wallet_address: userWallet, diagnosis: selectedDiagnoses, gejala: selectedSymptoms, kondisi: selectedCondition, obat_kimia: selectedDrug      
+      user_id: profile?.id || 0, diagnosis: selectedDiagnoses, gejala: selectedSymptoms, kondisi: selectedCondition, obat_kimia: selectedDrug      
     };
     
     setIsLoading(true); setRecommendations(null);

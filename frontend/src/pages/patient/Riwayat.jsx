@@ -1137,14 +1137,14 @@ export default function Riwayat() {
   const fetchHistory = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    const wallet = localStorage.getItem("user_wallet");
-    if (!wallet) {
+    const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
+    if (!profile?.id) {
       setError("Sesi Anda belum aktif. Silakan masuk terlebih dahulu.");
       setIsLoading(false);
       return;
     }
     try {
-      const res = await fetch(`${API}/api/history/${wallet}`);
+      const res = await fetch(`${API}/api/history/${profile.id}`);
       if (!res.ok) throw new Error("Gagal memuat data.");
       setHistories(await res.json());
     } catch {
@@ -1214,9 +1214,9 @@ export default function Riwayat() {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
-      const wallet = localStorage.getItem("user_wallet");
+      const profile = JSON.parse(localStorage.getItem("user_profile" || "null"));
       const res = await fetch(
-        `${API}/api/history/${deleteTarget.id}?wallet_address=${wallet}`,
+        `${API}/api/history/${deleteTarget.id}?user_id=${profile.id}`,
         { method: "DELETE" },
       );
       if (!res.ok) throw new Error("Gagal menghapus riwayat.");
@@ -1242,7 +1242,7 @@ export default function Riwayat() {
   const handleMultiDelete = async () => {
     if (selectedIds.size === 0) return;
     setIsDeleting(true);
-    const wallet = localStorage.getItem("user_wallet");
+    const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
     const idsToDelete = [...selectedIds];
     let successCount = 0;
     const failedIds = [];
@@ -1250,7 +1250,7 @@ export default function Riwayat() {
       idsToDelete.map(async (id) => {
         try {
           const res = await fetch(
-            `${API}/api/history/${id}?wallet_address=${wallet}`,
+            `${API}/api/history/${id}?user_id=${profile.id}`,
             { method: "DELETE" },
           );
           if (!res.ok) throw new Error();

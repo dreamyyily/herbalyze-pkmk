@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import MainLayout from "../../layouts/MainLayout";
-import { getReadOnlyContract, getSignerContract } from "../../utils/web3";
 import Avatar from "../../components/Avatar";
 import { Users, UserCheck, RefreshCw, ShieldCheck } from "lucide-react";
 
@@ -36,7 +35,8 @@ function Toast({ toasts, removeToast }) {
 }
 
 export default function PerizinanDokter() {
-  const userWallet = (localStorage.getItem('user_wallet') || '').toLowerCase();
+  const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
+  const userId = profile?.id;
 
   const [doctors, setDoctors] = useState([]);
   const [consentMap, setConsentMap] = useState({});
@@ -79,15 +79,13 @@ export default function PerizinanDokter() {
       if (!response.ok) throw new Error(data.error || "Gagal mengambil daftar dokter");
 
     const filteredDoctorList = (data.doctors || []).filter(
-      (doc) =>
-        doc.wallet_address &&
-        doc.wallet_address.toLowerCase() !== userWallet
+      (doc) => doc.id !== userId
     );
 
     setDoctors(filteredDoctorList);
 
       // cek consent
-      if (userWallet && data.doctors?.length > 0) {
+      if (userId && data.doctors?.length > 0) {
         await checkAllConsents(filteredDoctorList);
       }
     } catch (err) {
@@ -99,73 +97,39 @@ export default function PerizinanDokter() {
 
   const checkAllConsents = async (doctorList) => {
     try {
-      const contract = getReadOnlyContract();
-
-      const results = await Promise.all(
-        doctorList.map(async (doc) => {
-          if (!doc.wallet_address) return [doc.wallet_address, false];
-          try {
-            const hasConsent = await contract.checkConsent(userWallet, doc.wallet_address.toLowerCase());
-            return [doc.wallet_address.toLowerCase(), hasConsent];
-          } catch {
-            return [doc.wallet_address.toLowerCase(), false];
-          }
-        })
-      );
-
-      const map = {};
-      results.forEach(([addr, val]) => { map[addr] = val; });
-      setConsentMap(map);
+        const res = await fetch(`http://localhost:8000/api/consent/doctors/${userId}`);
+        const data = await res.json();
+        const consentedDoctorIds = new Set((data.doctors || []).map(d => d.id));
+        const map = {};
+        doctorList.forEach(doc => {
+            map[doc.id] = consentedDoctorIds.has(doc.id);
+        });
+        setConsentMap(map);
     } catch (err) {
-      console.error("Gagal cek consent:", err);
+        console.error("Gagal cek consent:", err);
     }
   };
 
-  const handleToggleConsent = async (doctorWallet) => {
-    if (!doctorWallet) return;
-    const normalizedDoctor = doctorWallet.toLowerCase();
-    const currentConsent = consentMap[normalizedDoctor] || false;
-
-    setLoadingConsent((prev) => ({ ...prev, [normalizedDoctor]: true }));
+  const handleToggleConsent = async (doctorId) => {
+    const currentConsent = consentMap[doctorId] || false;
+    setLoadingConsent((prev) => ({ ...prev, [doctorId]: true }));
     try {
-      const contract = await getSignerContract();
-
-      let tx;
-      if (currentConsent) {
-        tx = await contract.revokeConsent(doctorWallet);
-        await tx.wait();
-        showToast("success", "Izin Dicabut", "Izin berhasil dicabut dari dokter ini.");
-      } else {
-        tx = await contract.grantConsent(doctorWallet);
-        await tx.wait();
-        showToast("success", "Izin Diberikan", "Izin berhasil diberikan! Dokter ini sekarang dapat mengisi rekam medis Anda.");
-      }
-
-      setConsentMap((prev) => ({ ...prev, [normalizedDoctor]: !currentConsent }));
+        const endpoint = currentConsent ? "/api/consent/revoke" : "/api/consent/grant";
+        const res = await fetch(`http://localhost:8000${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ patient_id: userId, doctor_id: doctorId }),
+        });
+        if (!res.ok) throw new Error("Gagal mengubah izin");
+        setConsentMap((prev) => ({ ...prev, [doctorId]: !currentConsent }));
+        showToast("success",
+            currentConsent ? "Izin Dicabut" : "Izin Diberikan",
+            currentConsent ? "Izin berhasil dicabut." : "Izin berhasil diberikan!"
+        );
     } catch (err) {
-      console.error("Gagal mengubah consent:", err);
-      // Ekstrak pesan revert dari error blockchain
-      const revertReason =
-        err?.data?.data?.reason ||
-        err?.data?.reason ||
-        err?.reason ||
-        err?.error?.data?.reason ||
-        "";
-      const errMsg = err?.data?.message || err?.message || "";
-
-      if (revertReason.includes("belum di-ACC") || errMsg.includes("belum di-ACC")) {
-        showToast("error", "Akun Belum Disetujui", "Akun Anda perlu disetujui oleh Administrator Herbalyze terlebih dahulu sebelum bisa memberikan izin ke dokter.");
-      } else if (revertReason.includes("Consent sudah diberikan") || errMsg.includes("Consent sudah diberikan")) {
-        showToast("info", "Info", "Izin sudah diberikan sebelumnya.");
-      } else if (revertReason.includes("Consent belum pernah") || errMsg.includes("Consent belum pernah")) {
-        showToast("info", "Info", "Belum ada izin yang diberikan.");
-      } else if (err.code === 4001) {
-        showToast("warning", "Dibatalkan", "Transaksi dibatalkan oleh pengguna.");
-      } else {
-        showToast("error", "Gagal", "Gagal mengubah izin: " + (revertReason || errMsg || "Lihat console untuk detail."));
-      }
+        showToast("error", "Gagal", "Gagal mengubah izin. Coba lagi.");
     } finally {
-      setLoadingConsent((prev) => ({ ...prev, [normalizedDoctor]: false }));
+        setLoadingConsent((prev) => ({ ...prev, [doctorId]: false }));
     }
   };
 
@@ -176,7 +140,7 @@ export default function PerizinanDokter() {
   );
 
   const dokterDiizinkan = filteredDoctors.filter(
-    (doc) => consentMap[(doc.wallet_address || "").toLowerCase()]
+    (doc) => consentMap[doc.id] === true
   );
 
   const totalPageSemua = Math.ceil(filteredDoctors.length / ITEMS_PER_PAGE);
@@ -192,9 +156,8 @@ export default function PerizinanDokter() {
   );
 
   const DoctorCard = ({ doc }) => {
-    const wallet = (doc.wallet_address || "").toLowerCase();
-    const hasConsent = consentMap[wallet] || false;
-    const isProcessing = loadingConsent[wallet] || false;
+    const hasConsent = consentMap[doc.id] || false;
+    const isProcessing = loadingConsent[doc.id] || false;
 
     return (
       <div className={`flex items-center justify-between px-6 py-4 border-b border-gray-100 last:border-0 transition-all hover:bg-gray-50 ${
@@ -219,8 +182,8 @@ export default function PerizinanDokter() {
         </div>
 
         <button
-          onClick={() => handleToggleConsent(doc.wallet_address)}
-          disabled={isProcessing || !wallet}
+          onClick={() => handleToggleConsent(doc.id)}
+          disabled={isProcessing || !userId}
           className={`w-28 py-2 rounded-xl font-semibold text-sm transition-all flex-shrink-0 text-center ${
             isProcessing
               ? "bg-gray-200 text-gray-400 cursor-not-allowed"
@@ -373,7 +336,7 @@ export default function PerizinanDokter() {
                   <>
                     <div className="rounded-2xl border border-gray-100 overflow-hidden">
                       {paginatedSemua.map((doc) => (
-                        <DoctorCard key={doc.id || doc.wallet_address} doc={doc} />
+                        <DoctorCard key={doc.id} doc={doc} />
                       ))}
                     </div>
                     <Pagination
@@ -404,7 +367,7 @@ export default function PerizinanDokter() {
                   <>
                     <div className="rounded-2xl border border-gray-100 overflow-hidden">
                       {paginatedDiizinkan.map((doc) => (
-                        <DoctorCard key={doc.id || doc.wallet_address} doc={doc} />
+                        <DoctorCard key={doc.id} doc={doc} />
                       ))}
                     </div>
                     <Pagination

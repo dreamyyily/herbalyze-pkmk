@@ -13,10 +13,10 @@ export default function Navbar() {
   });
 
   useEffect(() => {
-    const wallet = localStorage.getItem("user_wallet");
-    if (!wallet) return;
+    const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
+    if (!profile?.id) return;
 
-    const cached = JSON.parse(localStorage.getItem("user_profile") || "{}");
+    const cached = profile;
     if (cached.name || cached.role) {
       setProfileData((prev) => ({
         ...prev,
@@ -26,7 +26,7 @@ export default function Navbar() {
       }));
     }
 
-    fetch(`${API}/api/profile/${wallet}`)
+    fetch(`${API}/api/profile/${profile.id}`)
       .then((res) => res.json())
       .then((data) => {
         setProfileData({
@@ -34,17 +34,16 @@ export default function Navbar() {
           role: data.role || "Patient",
           foto_profil: data.foto_profil || null,
         });
-        localStorage.setItem(
-          "user_profile",
-          JSON.stringify({
-            name: data.name,
-            role: data.role,
-            foto_profil: data.foto_profil || null,
-          }),
-        );
-        window.dispatchEvent(new Event("profile-updated"));
-      })
-      .catch((err) => console.error("Navbar: gagal load profil", err));
+        localStorage.setItem("user_profile", JSON.stringify({
+          id: data.id,
+          name: data.name,
+          role: data.role,
+          foto_profil: data.foto_profil || null,
+        }),
+      );
+      window.dispatchEvent(new Event("profile-updated"));
+    })
+    .catch((err) => console.error("Navbar: gagal load profil", err));
   }, []);
 
   useEffect(() => {
@@ -63,7 +62,9 @@ export default function Navbar() {
   }, []);
 
   const { name, role, foto_profil } = profileData;
-  const userWallet = (localStorage.getItem("user_wallet") || "").toLowerCase();
+  const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
+  const userId = profile?.id;
+  const userRole = profile?.role || "Patient";
   const isPatientMenuVisible =
     role === "Patient" ||
     role === "Pending_Doctor" ||
@@ -76,27 +77,23 @@ export default function Navbar() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
 
   const handleLogout = () => {
-    localStorage.removeItem("user_wallet");
     localStorage.removeItem("user_profile");
-    localStorage.removeItem("admin_metamask_verified");
     sessionStorage.removeItem("dismiss_pending_banner");
     window.location.href = "/";
   };
 
   const handleDeleteAccount = async () => {
-    const wallet = localStorage.getItem("user_wallet");
-    if (!wallet) return;
+    if (!userId) return;
     setIsDeleting(true);
     try {
       const res = await fetch(`${API}/api/account/delete`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_address: wallet }),
+        body: JSON.stringify({ user_id: userId }),
       });
       if (!res.ok) throw new Error("Gagal menghapus akun");
-      localStorage.removeItem("user_wallet");
       localStorage.removeItem("user_profile");
-      localStorage.removeItem("admin_metamask_verified");
+      localStorage.removeItem("user_profile_complete");
       sessionStorage.removeItem("dismiss_pending_banner");
       window.location.href = "/";
     } catch (err) {
@@ -107,18 +104,17 @@ export default function Navbar() {
   };
 
   const checkPendingDrafts = useCallback(async () => {
-    if (!userWallet || role === "Admin") return;
+    const p = JSON.parse(localStorage.getItem("user_profile") || "null");
+    if (!p?.id || p?.role === "Admin") return;
     try {
-      const res = await fetch(
-        `${API}/api/medical-record/draft/pending/${userWallet}`,
-      );
-      if (!res.ok) return;
-      const data = await res.json();
-      setDraftCount(data.count || 0);
+        const res = await fetch(`${API}/api/medical-record/draft/pending/${p.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setDraftCount(data.count || 0);
     } catch {
-      // Silent fail
+        // Silent fail
     }
-  }, [userWallet, role]);
+  }, []);
 
   useEffect(() => {
     checkPendingDrafts();
@@ -351,9 +347,8 @@ export default function Navbar() {
                 <TriangleAlert size={12} /> Perhatian
               </p>
               <p className="text-yellow-700 text-xs leading-relaxed">
-                Rekam medis yang sudah tersimpan di blockchain bersifat{" "}
-                <strong>permanen</strong> dan tidak dapat dihapus oleh siapapun,
-                termasuk oleh sistem kami.
+                Seluruh riwayat pencarian dan data profil akan dihapus secara permanen.
+                Rekam medis yang sudah disetujui dan tersimpan di database akan ikut terhapus.
               </p>
             </div>
 

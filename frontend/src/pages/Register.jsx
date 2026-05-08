@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { connectWallet } from "../utils/web3Helpers";
 
 // ─── Toast Component ────────────────────────────────────────────────────────
 function Toast({ toasts, removeToast }) {
@@ -49,8 +48,6 @@ function Toast({ toasts, removeToast }) {
 const Register = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
-  const [registeredUser, setRegisteredUser] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
@@ -87,12 +84,10 @@ const Register = () => {
     e.preventDefault();
     const newErrors = {};
 
-    // 1. Validasi Nama
     if (!formData.name.trim()) {
       newErrors.name = "Nama lengkap wajib diisi";
     }
 
-    // 2. Validasi Email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!formData.email) {
       newErrors.email = "Email wajib diisi";
@@ -100,8 +95,6 @@ const Register = () => {
       newErrors.email = "Format email salah (contoh: budi@email.com)";
     }
 
-    // 3. Validasi Password (ANGKA 123 PASTI GAGAL DI SINI)
-    // Syarat: Minimal 8 karakter, ada huruf BESAR, huruf kecil, angka, dan simbol
     const passwordRegex =
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
     if (!formData.password) {
@@ -111,38 +104,38 @@ const Register = () => {
         "Harus 8+ karakter, ada huruf besar, kecil, angka, & simbol";
     }
 
-    // 4. Validasi Konfirmasi Password
     if (formData.confirmPassword !== formData.password) {
       newErrors.confirmPassword = "Konfirmasi kata sandi tidak cocok";
     }
 
-    // --- BAGIAN PALING KRUSIAL: SI GERBANG TOL ---
     if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors); // Tampilkan garis merah dan pesan error
+      setErrors(newErrors); 
       showToast(
         "error",
         "Pendaftaran Ditolak",
         "Input tidak sesuai kriteria keamanan.",
       );
-      return; // <--- INI WAJIB ADA! Berfungsi untuk menghentikan kode agar tidak lanjut ke API
+      return; 
     }
 
-    // Jika lolos dari 'return' di atas, baru jalankan proses kirim data
     setErrors({});
     setIsLoading(true);
-
     try {
       const response = await fetch("http://localhost:8000/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+        }),
       });
-
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Pendaftaran gagal");
 
-      setRegisteredUser(data.user);
-      setStep(2);
+      localStorage.clear();
+      localStorage.setItem("user_profile", JSON.stringify(data.user));
+      navigate("/home");
     } catch (error) {
       showToast("error", "Gagal Mendaftar", error.message);
     } finally {
@@ -150,33 +143,6 @@ const Register = () => {
     }
   };
 
-  const handleLinkWallet = async () => {
-    setIsLoading(true);
-    try {
-      const address = await connectWallet();
-      const response = await fetch("http://localhost:8000/api/connect-wallet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: registeredUser.id,
-          wallet_address: address,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Gagal menautkan wallet");
-
-      localStorage.setItem("user_wallet", address);
-      localStorage.setItem("user_profile", JSON.stringify(data.user));
-      navigate("/home");
-    } catch (error) {
-      showToast("error", "Koneksi Gagal", error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Helper untuk styling border merah
   const getInputClass = (fieldName) => {
     const baseClass =
       "mt-1 block w-full px-4 py-3 border rounded-xl shadow-sm sm:text-sm transition-all outline-none";
@@ -199,7 +165,6 @@ const Register = () => {
 
       <div className="w-full md:w-1/2 flex flex-col justify-center items-center p-8 bg-white relative z-10">
         <div className="max-w-md w-full">
-          {step === 1 ? (
             <div className="bg-white p-8 rounded-2xl shadow-xl">
               <div className="text-center mb-8">
                 <h1 className="text-4xl font-extrabold text-primary-40 tracking-tight">
@@ -210,7 +175,6 @@ const Register = () => {
                 </h2>
               </div>
 
-              {/* KUNCI UTAMA: noValidate ditambahkan di sini */}
               <form className="space-y-6" onSubmit={handleRegister} noValidate>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
@@ -359,41 +323,6 @@ const Register = () => {
                 </span>
               </div>
             </div>
-          ) : (
-            // ... Bagian Step 2 (MetaMask) tidak berubah ...
-            <div className="bg-white p-8 rounded-2xl shadow-xl text-center">
-              <div className="mb-6 flex justify-center">
-                <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center animate-bounce">
-                  <img
-                    src="https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg"
-                    alt="MetaMask"
-                    className="w-12 h-12"
-                  />
-                </div>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Aktivasi Akun Anda
-              </h2>
-              <p className="text-gray-500 mb-8">
-                Hubungkan dompet digital MetaMask untuk mengaktifkan keamanan
-                data medis.
-              </p>
-              <button
-                onClick={handleLinkWallet}
-                disabled={isLoading}
-                className="w-full flex justify-center items-center gap-3 py-3 px-6 border border-gray-300 rounded-xl text-gray-800 bg-white hover:bg-gray-50 shadow-md transform transition hover:scale-105"
-              >
-                <img
-                  src="https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg"
-                  alt="MetaMask"
-                  className="w-6 h-6"
-                />
-                <span className="font-bold">
-                  Aktivasi dengan Dompet Digital
-                </span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
