@@ -5,7 +5,7 @@ import SelectField from "../../components/SelectField";
 import MultiSelectField from "../../components/MultiSelectField";
 import HeroSection from "../../components/HeroSection";
 import ResultSection from "../../components/ResultSection";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Crown, Zap, X } from "lucide-react";
 
 export default function Home() {
   const [diagnosisOptions, setDiagnosisOptions] = useState([]);
@@ -20,6 +20,11 @@ export default function Home() {
   const [recommendations, setRecommendations] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // ── Freemium state ──
+  const [premiumStatus, setPremiumStatus] = useState(null);  // null=belum load
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [quotaInfo, setQuotaInfo] = useState(null);
+
   const navigate = useNavigate();
   const location = useLocation(); 
   const [showSuccessToast, setShowSuccessToast] = useState(false); 
@@ -29,9 +34,30 @@ export default function Home() {
   const specialConditionOptions = ["Tidak ada", "Ibu hamil", "Ibu menyusui"];
   const chemicalDrugOptions = ["Tidak", "Ya"];
 
+  const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
+  const userId = profile?.id;
+
   useEffect(() => {
     fetchDiagnoses();
     fetchSymptoms();
+
+    // Load premium status
+    if (userId) {
+      fetch(`http://localhost:8000/api/premium/status/${userId}`)
+        .then(r => r.json())
+        .then(d => {
+          setPremiumStatus(d);
+          setQuotaInfo(d);
+          // Sync is_premium ke localStorage
+          const prof = JSON.parse(localStorage.getItem('user_profile') || 'null');
+          if (prof && prof.is_premium !== d.is_premium) {
+            prof.is_premium = d.is_premium;
+            localStorage.setItem('user_profile', JSON.stringify(prof));
+            window.dispatchEvent(new Event('profile-updated'));
+          }
+        })
+        .catch(() => {});
+    }
 
     if (location.state?.profileUpdated) {
       setShowSuccessToast(true);  
@@ -90,9 +116,26 @@ export default function Home() {
       return;
     }
 
-    const profile = JSON.parse(localStorage.getItem('user_profile') || 'null');
+    // ── Cek kuota Exact Match ──────────────────────────────────
+    if (userId) {
+      try {
+        const quotaRes = await fetch("http://localhost:8000/api/premium/record-exact-match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userId }),
+        });
+        const quotaData = await quotaRes.json();
+        setQuotaInfo(quotaData);
+        if (!quotaData.allowed) {
+          setShowUpgradeModal(true);
+          return;
+        }
+      } catch { /* lanjut jika error */ }
+    }
+
+    const prof = JSON.parse(localStorage.getItem('user_profile') || 'null');
     const payload = { 
-      user_id: profile?.id || 0, diagnosis: selectedDiagnoses, gejala: selectedSymptoms, kondisi: selectedCondition, obat_kimia: selectedDrug      
+      user_id: prof?.id || 0, diagnosis: selectedDiagnoses, gejala: selectedSymptoms, kondisi: selectedCondition, obat_kimia: selectedDrug      
     };
     
     setIsLoading(true); setRecommendations(null);
@@ -118,6 +161,45 @@ export default function Home() {
 
   return (
     <MainLayout>
+      {/* Upgrade Modal */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowUpgradeModal(false)} />
+          <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 text-center">
+            <button onClick={() => setShowUpgradeModal(false)} className="absolute top-4 right-4 text-gray-300 hover:text-gray-500"><X size={22} /></button>
+            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Crown size={30} className="text-amber-500" />
+            </div>
+            <h3 className="text-2xl font-extrabold text-gray-800 mb-2">Kuota Habis!</h3>
+            <p className="text-gray-500 text-sm mb-1">
+              Anda telah menggunakan <strong>{quotaInfo?.exact_match_count || 5}/{quotaInfo?.exact_match_quota || 5}</strong> kuota Exact Matching gratis.
+            </p>
+            <p className="text-gray-400 text-xs mb-6">
+              Upgrade ke Premium untuk pencarian Exact Match tanpa batas selama 30 hari.
+            </p>
+            <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 mb-6 flex items-center justify-between">
+              <div className="text-left">
+                <p className="font-extrabold text-gray-800 text-lg">Premium</p>
+                <p className="text-xs text-gray-500">Exact Match + Rekam Medis Dokter</p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-extrabold text-amber-600">Rp 5.000</p>
+                <p className="text-xs text-gray-400">/bulan</p>
+              </div>
+            </div>
+            <button
+              onClick={() => { setShowUpgradeModal(false); navigate('/premium'); }}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Crown size={16} /> Upgrade Sekarang — Rp 5.000/bln
+            </button>
+            <button onClick={() => setShowUpgradeModal(false)} className="w-full mt-3 text-gray-400 text-sm hover:text-gray-600 transition">
+              Nanti saja
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="absolute top-0 inset-x-0 h-[600px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary-10/60 via-primary-10/30 to-transparent -z-10" />
 
       {showSuccessToast && (
@@ -138,6 +220,37 @@ export default function Home() {
       <div className="max-w-6xl mx-auto pt-10 md:pt-14 px-4 pb-24">
         
         <HeroSection />
+
+        {/* Quota Banner — tampil untuk free user */}
+        {quotaInfo && !quotaInfo.is_premium && (
+          <div
+            className={`mt-4 mb-2 flex items-center justify-between gap-4 px-5 py-3 rounded-2xl border text-sm ${
+              quotaInfo.quota_remaining === 0
+                ? "bg-red-50 border-red-200 text-red-700"
+                : quotaInfo.quota_remaining <= 2
+                ? "bg-amber-50 border-amber-200 text-amber-800"
+                : "bg-blue-50 border-blue-200 text-blue-700"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Zap size={15} className="flex-shrink-0" />
+              <span>
+                Sisa kuota <strong>Exact Match</strong>:{" "}
+                <strong>
+                  {quotaInfo.quota_remaining}/{quotaInfo.exact_match_quota}x
+                </strong>
+                {quotaInfo.quota_remaining === 0 && " — Kuota habis!"}
+                {quotaInfo.quota_remaining === 1 && " — Hampir habis!"}
+              </span>
+            </div>
+            <button
+              onClick={() => navigate("/premium")}
+              className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition"
+            >
+              <Crown size={12} /> Upgrade
+            </button>
+          </div>
+        )}
 
         <div className="bg-white rounded-[32px] shadow-[0_20px_50px_rgba(37,99,235,0.07)] border border-primary-10 relative backdrop-blur-sm mt-6">
 

@@ -7,15 +7,15 @@ import {
   ClipboardList,
   RefreshCw,
   CheckCircle2,
+  CheckCircle,
   AlertTriangle,
   X,
   XCircle,
-  CheckCircle,
   Stethoscope,
   Search,
-  Sparkles,
-  Link,
   ShieldCheck,
+  Crown,
+  Sparkles
 } from "lucide-react";
 
 const API = "http://localhost:8000";
@@ -133,9 +133,30 @@ function LoadingOverlay({ show, message }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function CatatanDokter() {
-  const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
-  const userId = profile?.id;
   const navigate = useNavigate();
+  const [profile, setProfile] = useState(JSON.parse(localStorage.getItem("user_profile") || "null"));
+  const userId = profile?.id;
+  const [isPremium, setIsPremium] = useState(profile?.is_premium || false);
+
+  useEffect(() => {
+    if (userId) {
+      fetch(`${API}/api/premium/status/${userId}`)
+        .then(res => res.json())
+        .then(d => {
+          if (d.is_premium) {
+            setIsPremium(true);
+            const prof = JSON.parse(localStorage.getItem("user_profile") || "null");
+            if (prof && !prof.is_premium) {
+              prof.is_premium = true;
+              localStorage.setItem("user_profile", JSON.stringify(prof));
+              setProfile(prof);
+              window.dispatchEvent(new Event("profile-updated"));
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  }, [userId]);
 
   // ── State: rekam medis dari blockchain ──
   const [records, setRecords] = useState([]);
@@ -368,6 +389,8 @@ export default function CatatanDokter() {
     );
   };
 
+
+
   return (
     <MainLayout>
       {/* Toast Notifications */}
@@ -379,6 +402,38 @@ export default function CatatanDokter() {
         onConfirm={handleModalConfirm}
         onCancel={handleModalCancel}
       />
+
+      {/* Premium Lock Overlay */}
+      {!isPremium && (
+        <div className="fixed inset-0 z-[9990] bg-white/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-[2rem] shadow-2xl border border-gray-100 text-center max-w-md w-full animate-fade-in">
+            <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6 border-[8px] border-amber-50/50">
+              <Crown className="h-8 w-8 text-amber-500" />
+            </div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-3">
+              Fitur Premium
+            </h3>
+            <p className="text-sm text-gray-500 mb-2 leading-relaxed px-2">
+              Akses ke <strong>Catatan Medis Dokter</strong> hanya tersedia untuk pengguna Premium.
+            </p>
+            <p className="text-xs text-gray-400 mb-8 leading-relaxed px-2">
+              Upgrade sekarang untuk membuka riwayat rekam medis dan verifikasi dokumen dari dokter.
+            </p>
+            <button
+              onClick={() => navigate("/premium")}
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold py-4 rounded-xl hover:shadow-lg transition-all active:scale-95"
+            >
+              Upgrade ke Premium
+            </button>
+            <button
+              onClick={() => navigate("/home")}
+              className="w-full mt-3 text-gray-500 hover:text-gray-700 text-sm font-semibold transition"
+            >
+              Kembali ke Beranda
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Loading Overlay */}
       <LoadingOverlay show={isProcessingDraft} message={loadingMsg} />

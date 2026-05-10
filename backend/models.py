@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, JSON, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, JSON, Boolean, DateTime, ForeignKey, Float
 from datetime import datetime
 from db import Base
 
@@ -24,6 +24,8 @@ class User(Base):
     dokumen_str_path = Column(String(500), nullable=True)
     dokumen_sip_path = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Freemium fields
+    exact_match_count = Column(Integer, default=0, nullable=False)
 
     def to_dict(self):
         return {
@@ -43,6 +45,7 @@ class User(Base):
             'instansi_lama': self.instansi_lama,
             'instansi_baru': self.instansi_baru,
             'nomor_str': self.nomor_str,
+            'exact_match_count': self.exact_match_count or 0,
         }
 
 
@@ -169,4 +172,34 @@ class DoctorPatientConsent(Base):
             "doctor_id": self.doctor_id,
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PremiumSubscription(Base):
+    __tablename__ = 'premium_subscriptions'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    xendit_invoice_id = Column(String(255), nullable=True, unique=True)
+    qr_string = Column(Text, nullable=True)          # QR code string dari Xendit
+    qr_image_url = Column(Text, nullable=True)        # URL gambar QR dari Xendit
+    amount = Column(Float, default=5000.0)
+    status = Column(String(30), default='PENDING')   # PENDING | PAID | EXPIRED | FAILED
+    bukti_transfer_path = Column(String(500), nullable=True) # Bukti transfer
+    started_at = Column(DateTime, nullable=True)      # Saat pembayaran terverifikasi
+    expires_at = Column(DateTime, nullable=True)      # started_at + 30 hari
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'xendit_invoice_id': self.xendit_invoice_id,
+            'qr_string': self.qr_string,
+            'qr_image_url': self.qr_image_url,
+            'amount': self.amount,
+            'status': self.status,
+            'bukti_transfer_url': f"http://localhost:8000/api/uploads/{__import__('pathlib').Path(self.bukti_transfer_path).name}" if self.bukti_transfer_path else None,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }

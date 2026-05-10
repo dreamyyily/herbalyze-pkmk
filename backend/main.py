@@ -17,12 +17,15 @@ from pathlib import Path
 from db import get_db, Base, engine
 from models import (
     User, HerbalDiagnosis, HerbalSymptom, HerbalSpecialCondition,
-    SearchHistory, MedicalRecordDraft, MedicalRecord, DoctorPatientConsent
+    SearchHistory, MedicalRecordDraft, MedicalRecord, DoctorPatientConsent,
+    PremiumSubscription
 )
 from fastapi.encoders import jsonable_encoder
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import json as _json_lib
+import httpx
+import base64
 
 load_dotenv()
 
@@ -1250,3 +1253,212 @@ def get_doctor_records(doctor_id: int, db: Session = Depends(get_db)):
         doctor_id=doctor_id
     ).order_by(MedicalRecord.created_at.desc()).all()
     return {"records": [r.to_dict() for r in records]}
+
+
+# ==============================================================================
+# ENDPOINTS — PREMIUM SUBSCRIPTION (XENDIT QRIS)
+# ==============================================================================
+
+XENDIT_SECRET_KEY = os.getenv("XENDIT_SECRET_KEY", "")
+FREE_EXACT_MATCH_QUOTA = 5   # kuota lifetime untuk free user
+
+
+def _xendit_auth_header() -> str:
+    """Basic auth header untuk Xendit API (secret_key:)"""
+    token = base64.b64encode(f"{XENDIT_SECRET_KEY}:".encode()).decode()
+    return f"Basic {token}"
+
+
+def _check_premium_active(user_id: int, db: Session) -> bool:
+    """Cek apakah user memiliki langganan premium yang aktif."""
+    now = datetime.utcnow()
+    sub = db.query(PremiumSubscription).filter(
+        PremiumSubscription.user_id == user_id,
+        PremiumSubscription.status == "PAID",
+        PremiumSubscription.expires_at > now
+    ).order_by(PremiumSubscription.expires_at.desc()).first()
+    return sub is not None
+
+
+class CreateQrisRequest(BaseModel):
+    user_id: int
+
+
+@app.post("/api/premium/upload-proof")
+async def upload_proof(
+    user_id: int = Form(...),
+    file_bukti: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+
+    if _check_premium_active(user_id, db):
+        raise HTTPException(status_code=400, detail="Anda sudah memiliki langganan premium aktif.")
+
+    # Hapus PENDING invoice lama agar tidak menumpuk
+    db.query(PremiumSubscription).filter(
+        PremiumSubscription.user_id == user_id,
+        PremiumSubscription.status == "PENDING"
+    ).delete(synchronize_session=False)
+
+    allowed = ["application/pdf", "image/jpeg", "image/png", "application/octet-stream"]
+    if file_bukti.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Format file tidak didukung")
+
+    bukti_path = UPLOAD_DIR / f"bukti_{user_id}_{int(datetime.utcnow().timestamp())}_{file_bukti.filename}"
+    with open(bukti_path, "wb") as buf:
+        shutil.copyfileobj(file_bukti.file, buf)
+
+    sub = PremiumSubscription(
+        user_id=user_id,
+        amount=5000.0,
+        status="PENDING",
+        bukti_transfer_path=str(bukti_path)
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    return {"message": "Bukti transfer berhasil diunggah", "subscription": sub.to_dict()}
+
+
+@app.get("/api/admin/pending_premiums")
+def get_pending_premiums(db: Session = Depends(get_db)):
+    subs = db.query(PremiumSubscription).filter(PremiumSubscription.status == "PENDING").all()
+    result = []
+    for s in subs:
+        user = db.query(User).filter(User.id == s.user_id).first()
+        if not user: continue
+        d = s.to_dict()
+        d["user_name"] = user.name
+        d["user_email"] = user.email
+        d["created_at"] = s.created_at.isoformat() if s.created_at else None
+        result.append(d)
+    return result
+
+class ApprovePremiumRequest(BaseModel):
+    subscription_id: int
+
+@app.post("/api/admin/approve_premium")
+def approve_premium(req: ApprovePremiumRequest, db: Session = Depends(get_db)):
+    sub = db.query(PremiumSubscription).filter(
+        PremiumSubscription.id == req.subscription_id, 
+        PremiumSubscription.status == "PENDING"
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan")
+    now = datetime.utcnow()
+    sub.status = "PAID"
+    sub.started_at = now
+    sub.expires_at = now + timedelta(days=30)
+    db.commit()
+    db.refresh(sub)
+    return {"message": "Premium berhasil disetujui", "subscription": sub.to_dict()}
+
+@app.post("/api/admin/reject_premium")
+def reject_premium(req: ApprovePremiumRequest, db: Session = Depends(get_db)):
+    sub = db.query(PremiumSubscription).filter(
+        PremiumSubscription.id == req.subscription_id, 
+        PremiumSubscription.status == "PENDING"
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan")
+    sub.status = "FAILED"
+    db.commit()
+    return {"message": "Pengajuan ditolak"}
+
+
+@app.get("/api/premium/status/{user_id}")
+def get_premium_status(user_id: int, db: Session = Depends(get_db)):
+    """Polling oleh frontend untuk cek status premium user."""
+    now = datetime.utcnow()
+
+    # Ekspirasi otomatis subscription yang kadaluarsa
+    db.query(PremiumSubscription).filter(
+        PremiumSubscription.user_id == user_id,
+        PremiumSubscription.status == "PAID",
+        PremiumSubscription.expires_at <= now
+    ).update({"status": "EXPIRED"}, synchronize_session=False)
+    db.commit()
+
+    # Ambil langganan aktif terbaru
+    active_sub = db.query(PremiumSubscription).filter(
+        PremiumSubscription.user_id == user_id,
+        PremiumSubscription.status == "PAID",
+        PremiumSubscription.expires_at > now
+    ).order_by(PremiumSubscription.expires_at.desc()).first()
+
+    # Ambil user untuk exact_match_count
+    user = db.query(User).filter(User.id == user_id).first()
+    exact_count = user.exact_match_count if user else 0
+
+    if active_sub:
+        return {
+            "is_premium": True,
+            "expires_at": active_sub.expires_at.isoformat(),
+            "started_at": active_sub.started_at.isoformat(),
+            "exact_match_count": exact_count,
+            "exact_match_quota": FREE_EXACT_MATCH_QUOTA,
+        }
+
+    # Cek apakah ada PENDING (menunggu bayar)
+    pending_sub = db.query(PremiumSubscription).filter(
+        PremiumSubscription.user_id == user_id,
+        PremiumSubscription.status == "PENDING"
+    ).order_by(PremiumSubscription.created_at.desc()).first()
+
+    return {
+        "is_premium": False,
+        "expires_at": None,
+        "started_at": None,
+        "pending_payment": pending_sub.to_dict() if pending_sub else None,
+        "exact_match_count": exact_count,
+        "exact_match_quota": FREE_EXACT_MATCH_QUOTA,
+    }
+
+
+
+
+class RecordExactMatchRequest(BaseModel):
+    user_id: int
+
+
+@app.post("/api/premium/record-exact-match")
+def record_exact_match(req: RecordExactMatchRequest, db: Session = Depends(get_db)):
+    """
+    Catat penggunaan exact match oleh user.
+    Mengembalikan quota sisa dan apakah masih boleh melakukan exact match.
+    """
+    user = db.query(User).filter(User.id == req.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+
+    # Cek apakah premium aktif → unlimited
+    if _check_premium_active(req.user_id, db):
+        return {
+            "allowed": True,
+            "is_premium": True,
+            "exact_match_count": user.exact_match_count or 0,
+            "quota_remaining": -1,   # -1 = unlimited
+        }
+
+    # Free user → cek quota
+    current_count = user.exact_match_count or 0
+    if current_count >= FREE_EXACT_MATCH_QUOTA:
+        return {
+            "allowed": False,
+            "is_premium": False,
+            "exact_match_count": current_count,
+            "quota_remaining": 0,
+        }
+
+    user.exact_match_count = current_count + 1
+    db.commit()
+    remaining = FREE_EXACT_MATCH_QUOTA - user.exact_match_count
+    return {
+        "allowed": True,
+        "is_premium": False,
+        "exact_match_count": user.exact_match_count,
+        "quota_remaining": remaining,
+    }

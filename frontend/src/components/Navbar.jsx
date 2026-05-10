@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useState, useEffect, useCallback } from "react";
 import Avatar from "./Avatar";
-import { LogOut, Trash2, TriangleAlert } from "lucide-react";
+import { LogOut, Trash2, TriangleAlert, Crown } from "lucide-react";
 
 const API = "http://localhost:8000";
 
@@ -10,6 +10,7 @@ export default function Navbar() {
     name: null,
     role: "Patient",
     foto_profil: null,
+    is_premium: false,
   });
 
   useEffect(() => {
@@ -33,14 +34,15 @@ export default function Navbar() {
           name: data.name || null,
           role: data.role || "Patient",
           foto_profil: data.foto_profil || null,
+          is_premium: profile.is_premium || false, // will update later
         });
         localStorage.setItem("user_profile", JSON.stringify({
           id: data.id,
           name: data.name,
           role: data.role,
           foto_profil: data.foto_profil || null,
-        }),
-      );
+          is_premium: profile.is_premium || false,
+        }));
       window.dispatchEvent(new Event("profile-updated"));
     })
     .catch((err) => console.error("Navbar: gagal load profil", err));
@@ -53,6 +55,7 @@ export default function Navbar() {
         name: cached.name || null,
         role: cached.role || "Patient",
         foto_profil: cached.foto_profil || null,
+        is_premium: cached.is_premium || false,
       });
     };
 
@@ -61,7 +64,7 @@ export default function Navbar() {
       window.removeEventListener("profile-updated", handleProfileUpdated);
   }, []);
 
-  const { name, role, foto_profil } = profileData;
+  const { name, role, foto_profil, is_premium } = profileData;
   const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
   const userId = profile?.id;
   const userRole = profile?.role || "Patient";
@@ -182,6 +185,19 @@ export default function Navbar() {
               >
                 Riwayat
               </NavLink>
+              <NavLink
+                to="/premium"
+                className={({ isActive }) =>
+                  `flex items-center gap-1.5 px-3 py-1.5 rounded-full border ${
+                    isActive || is_premium
+                      ? "border-amber-400 bg-amber-50 text-amber-600 font-bold shadow-sm"
+                      : "border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-600 font-medium"
+                  } transition text-sm`
+                }
+              >
+                <Crown size={14} className={is_premium ? "text-amber-500 fill-amber-500" : ""} /> 
+                {is_premium ? "Premium" : "Upgrade"}
+              </NavLink>
             </>
           )}
 
@@ -239,6 +255,19 @@ export default function Navbar() {
                 }
               >
                 Riwayat
+              </NavLink>
+              <NavLink
+                to="/premium"
+                className={({ isActive }) =>
+                  `flex items-center gap-1.5 px-3 py-1.5 rounded-full border ${
+                    isActive || is_premium
+                      ? "border-amber-400 bg-amber-50 text-amber-600 font-bold shadow-sm"
+                      : "border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-600 font-medium"
+                  } transition text-sm`
+                }
+              >
+                <Crown size={14} className={is_premium ? "text-amber-500 fill-amber-500" : ""} /> 
+                {is_premium ? "Premium" : "Upgrade"}
               </NavLink>
             </>
           )}

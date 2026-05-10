@@ -10,6 +10,7 @@ import Register from "./pages/Register.jsx";
 import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
 import Riwayat from "./pages/patient/Riwayat.jsx";
 import AiSearch from "./pages/patient/AiSearch.jsx";
+import Premium from "./pages/patient/Premium.jsx";
 
 const ProtectedRoute = ({ children }) => {
     const location = useLocation();
@@ -224,6 +225,11 @@ const AppContent = () => {
                 </ProfileCompleteRoute></ProtectedRoute>
             } />
             
+            <Route path="/premium" element={
+                <ProtectedRoute>
+                    <Premium />
+                </ProtectedRoute>
+            } />
         </Routes>
     );
 };
