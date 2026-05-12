@@ -235,7 +235,7 @@ export default function Home() {
             <div className="flex items-center gap-2">
               <Zap size={15} className="flex-shrink-0" />
               <span>
-                Sisa kuota <strong>Exact Match</strong>:{" "}
+                Sisa kuota <strong>Cari Berdasarkan Keluhan</strong>:{" "}
                 <strong>
                   {quotaInfo.quota_remaining}/{quotaInfo.exact_match_quota}x
                 </strong>
@@ -256,10 +256,13 @@ export default function Home() {
 
           <div className="bg-primary-10/40 border-b border-light-40 px-8 py-6 md:px-10 md:py-8 flex items-center justify-between">
             <h2 className="text-xl md:text-2xl font-bold text-dark-50 flex items-center gap-4">
+              {/* Ikon diperbarui menjadi Search + Heart/Medical untuk kesan "Cari Berdasarkan Keluhan" */}
               <div className="p-2.5 bg-gradient-to-br from-primary-40 to-primary-60 rounded-xl shadow-lg shadow-primary-20 flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m-3-3h6" />
+                </svg>
               </div>
-              Data Medis Pasien
+              Cari Berdasarkan Keluhan
             </h2>
           </div>
 

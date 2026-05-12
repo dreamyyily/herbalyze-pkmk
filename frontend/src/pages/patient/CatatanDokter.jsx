@@ -447,11 +447,10 @@ export default function CatatanDokter() {
               Privasi Terjamin
             </span>
             <h1 className="text-3xl md:text-4xl font-extrabold text-dark-50 mb-3">
-              Catatan Medis Anda
+              Analisis Rekam Medis
             </h1>
             <p className="text-gray-500 max-w-xl mx-auto">
-              Verifikasi rekam medis dari dokter dan lihat riwayat catatan yang
-              tersimpan aman di Blockchain.
+              Verifikasi catatan resmi dari dokter Anda untuk disimpan di Blockchain dan temukan rekomendasi herbal yang paling akurat berdasarkan riwayat medis Anda.
             </p>
           </div>
         )}

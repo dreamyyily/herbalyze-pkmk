@@ -12,13 +12,16 @@ const API = "http://localhost:8000";
 const QUOTA_MAX = 5;
 
 // ── Modal Pembayaran Manual ────────────────────────────────────────────────────────
-function ManualPaymentModal({ onClose, onSuccess, userId }) {
+function ManualPaymentModal({ onClose, onSuccess, userId, showToast }) { // Tambahkan showToast di props
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!file) return;
+    if (!file) {
+      showToast('danger', 'Peringatan', 'Silakan pilih file bukti transfer terlebih dahulu.');
+      return;
+    }
 
     setLoading(true);
     const formData = new FormData();
@@ -31,56 +34,67 @@ function ManualPaymentModal({ onClose, onSuccess, userId }) {
         body: formData,
       });
       const d = await res.json();
+      
       if (!res.ok) throw new Error(d.detail || "Gagal mengunggah bukti");
-      alert("Bukti pembayaran berhasil diunggah! Mohon tunggu konfirmasi admin.");
-      onSuccess(d.subscription); // ini akan me-refresh status
+
+      // GANTI ALERT DENGAN TOAST (MODERN)
+      showToast('success', 'Berhasil', 'Bukti pembayaran berhasil diunggah! Mohon tunggu konfirmasi admin.');
+      
+      onSuccess(d.subscription); 
+      onClose(); // Tutup modal otomatis setelah berhasil
     } catch (error) {
-      alert(error.message);
+      // GANTI ALERT DENGAN TOAST (MODERN)
+      showToast('danger', 'Gagal', error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 animate-scale-in">
+      <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 animate-scale-in">
+        {/* ... (Konten modal tetap sama seperti sebelumnya) ... */}
         <button onClick={onClose} className="absolute top-4 right-4 text-gray-300 hover:text-gray-500">
           <XCircle size={24} />
         </button>
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-xs font-bold mb-3">
+        
+        <div className="text-center mb-3">
+          <div className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-[10px] font-bold mb-2">
             <Crown size={12} /> PREMIUM — Rp 5.000 / bulan
           </div>
-          <h3 className="text-xl font-extrabold text-gray-800">Transfer ke DANA</h3>
-          <p className="text-gray-400 text-xs mt-1">Scan QR ini menggunakan aplikasi DANA</p>
+          <h3 className="text-lg font-extrabold text-gray-800">Transfer ke DANA</h3>
+          <p className="text-gray-400 text-[10px] mt-0.5">Scan QR ini menggunakan aplikasi DANA</p>
         </div>
 
-        {/* QR Code statis */}
-        <div className="flex justify-center mb-5">
-          <div className="bg-white border-2 border-gray-100 rounded-2xl p-4 shadow-inner">
-            <img src={qrDana} alt="QR DANA" className="w-44 h-44 object-contain rounded-lg" />
+        <div className="flex justify-center mb-3">
+          <div className="bg-white border border-gray-100 rounded-2xl p-0.5 shadow-inner w-full flex justify-center">
+            <img 
+              src={qrDana} 
+              alt="QR DANA" 
+              className="w-full h-auto max-w-[300px] object-contain rounded-lg" 
+            />
           </div>
         </div>
 
-        <div className="bg-gray-50 rounded-2xl p-4 mb-5 text-center">
-          <p className="text-xs text-gray-400">Total Pembayaran</p>
-          <p className="text-3xl font-extrabold text-gray-800">Rp 5.000</p>
+        <div className="bg-gray-50 rounded-2xl p-2.5 mb-4 text-center border border-gray-100">
+          <p className="text-[10px] text-gray-400">Total Pembayaran</p>
+          <p className="text-2xl font-extrabold text-gray-800">Rp 5.000</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <label className="text-sm font-semibold text-gray-700">Unggah Bukti Transfer</label>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+          <label className="text-xs font-semibold text-gray-700">Unggah Bukti Transfer</label>
           <input 
             type="file" 
             accept="image/*,application/pdf"
             onChange={(e) => setFile(e.target.files[0])}
             required
-            className="text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer"
+            className="text-[11px] text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-[11px] file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer"
           />
           <button
             type="submit"
             disabled={loading || !file}
-            className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold text-sm hover:shadow-lg transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full mt-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold text-sm hover:shadow-lg transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {loading ? (
               <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Mengunggah...</>
@@ -100,9 +114,15 @@ export default function Premium() {
   const profile = JSON.parse(localStorage.getItem("user_profile") || "null");
   const userId = profile?.id;
 
-  const [status, setStatus] = useState(null); // null=loading
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState(null);
   const [showModal, setShowModal] = useState(false);
+
+  // LOGIKA TOAST MODERN (Agar konsisten dengan halaman lain)
+  const [toast, setToast] = useState(null);
+  const showToast = (type, title, message) => {
+    setToast({ type, title, message });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const fetchStatus = useCallback(async () => {
     if (!userId) return;
@@ -115,13 +135,11 @@ export default function Premium() {
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  const handleUpgrade = () => {
-    setShowModal(true);
-  };
+  const handleUpgrade = () => setShowModal(true);
 
   const handlePaymentSuccess = async () => {
     setShowModal(false);
-    fetchStatus(); // fetch ulang status untuk dapetin pending payment
+    fetchStatus(); 
   };
 
   const quotaUsed = status?.exact_match_count ?? 0;
@@ -136,11 +154,25 @@ export default function Premium() {
 
   return (
     <MainLayout>
+      {/* Toast UI Component */}
+      {toast && (
+        <div className={`fixed top-5 right-5 z-[10000] p-4 rounded-2xl shadow-2xl flex flex-col min-w-[300px] animate-fade-in-down ${
+          toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+        } text-white`}>
+          <div className="flex items-center gap-2 font-bold text-sm">
+            {toast.type === 'success' ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+            {toast.title}
+          </div>
+          <p className="text-xs opacity-90 mt-1">{toast.message}</p>
+        </div>
+      )}
+
       {showModal && (
         <ManualPaymentModal
           userId={userId}
           onClose={() => setShowModal(false)}
           onSuccess={handlePaymentSuccess}
+          showToast={showToast} // Oper fungsi toast ke modal
         />
       )}
 
@@ -218,9 +250,9 @@ export default function Premium() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-lg font-extrabold text-gray-800 flex items-center gap-2">
-                    <Zap size={18} className="text-amber-500" /> Kuota Exact Matching
+                    <Zap size={18} className="text-amber-500" /> Batas Pencarian Berdasarkan Keluhan
                   </h2>
-                  <p className="text-sm text-gray-400 mt-0.5">Sisa kuota seumur hidup akun Anda</p>
+                  <p className="text-sm text-gray-400 mt-0.5">Sisa kuota gratis untuk akun Anda</p>
                 </div>
                 <div className="text-right">
                   <span className={`text-3xl font-extrabold ${quotaRemaining === 0 ? "text-red-500" : "text-gray-800"}`}>
@@ -270,10 +302,9 @@ export default function Premium() {
             </div>
             <ul className="space-y-3">
               {[
-                { ok: true,  text: "Rekomendasi Herbal AI (SBERT)" },
-                { ok: true,  text: `Exact Matching — ${quotaMax}x seumur hidup` },
-                { ok: false, text: "Exact Matching — Unlimited" },
-                { ok: false, text: "Rekam Medis Dokter" },
+                { ok: true,  text: `Cari Herbal Berdasarkan Keluhan — Gratis 5x Penggunaan` },
+                { ok: false,  text: "Cari Herbal Berdasarkan Catatan Dokter" },
+                { ok: false, text: "Cari Herbal Berdasarkan Keluhan — Tanpa Batas (Unlimited)" },
               ].map((f, i) => (
                 <li key={i} className={`flex items-center gap-3 text-sm ${f.ok ? "text-gray-700" : "text-gray-300"}`}>
                   {f.ok
@@ -299,10 +330,9 @@ export default function Premium() {
             </div>
             <ul className="space-y-3 mb-6">
               {[
-                "Rekomendasi Herbal AI (SBERT)",
-                "Exact Matching — Unlimited",
-                "Rekam Medis Dokter — Akses Penuh",
-                "Akses 30 hari, renewal kapan saja",
+                "Cari Berdasarkan Catatan Dokter — Tanpa Batas (Unlimited)",
+                "Cari Berdasarkan Keluhan — Tanpa Batas (Unlimited)",
+                "Aktif selama 30 hari, perpanjang kapan saja",
               ].map((f, i) => (
                 <li key={i} className="flex items-center gap-3 text-sm text-white">
                   <CheckCircle2 size={16} className="text-green-300 flex-shrink-0" />
